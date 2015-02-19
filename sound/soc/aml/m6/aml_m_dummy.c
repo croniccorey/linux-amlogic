@@ -33,24 +33,10 @@
 #include "aml_dai.h"
 #include "aml_pcm.h"
 #include "aml_audio_hw.h"
-
-#ifdef CONFIG_USE_OF
-#include <linux/of.h>
-#include <linux/pinctrl/consumer.h>
-#include <linux/amlogic/aml_gpio_consumer.h>
-#include <linux/of_gpio.h>
-#include <mach/pinmux.h>
-#include <plat/io.h>
-#endif
+#include "aml_alsa_common.h"
 
 static struct dummy_codec_platform_data *dummy_codec_snd_pdata = NULL;
 
-#ifdef CONFIG_USE_OF
-static struct device_node *np = NULL;
-static struct dummy_codec_platform_data *dummy_codec_pdata = NULL;
-struct device *dummy_codec_dev = NULL;
-struct pinctrl *p = NULL;
-#endif
 static void dummy_codec_dev_init(void)
 {
     if (dummy_codec_snd_pdata->device_init) {
@@ -122,7 +108,7 @@ static struct snd_soc_ops dummy_codec_soc_ops = {
 };
 
 static int dummy_codec_set_bias_level(struct snd_soc_card *card,
-			      struct snd_soc_dapm_context *dapm, enum snd_soc_bias_level level)
+			      enum snd_soc_bias_level level)
 {
     int ret = 0;
 
@@ -141,6 +127,7 @@ static int dummy_codec_set_bias_level(struct snd_soc_card *card,
     default:
         return ret;
     }
+
     return 0;
 }
 
@@ -181,47 +168,6 @@ static struct snd_soc_card snd_soc_dummy_codec = {
     .set_bias_level = dummy_codec_set_bias_level,
 };
 
-#ifdef CONFIG_USE_OF
-static void dummy_codec_device_init(void)
-{
-#ifdef CONFIG_USE_OF
-	int ret;
-	struct pinctrl_state *s;
-	p = pinctrl_get(dummy_codec_dev);
-
-	if (IS_ERR(p))
-		return;
-			
-	s = pinctrl_lookup_state(p, "dummy_codec_audio");
-	if (IS_ERR(s)) {
-		pinctrl_put(p);
-		return;
-	}
-		
-	ret = pinctrl_select_state(p, s);
-	if (ret < 0) {
-		pinctrl_put(p);
-		return;
-	}
-	printk("=%s==,dummy_codec_audio init done\n",__func__);
-#else
-    /* audio pinmux */
-//    pinmux_set(&rt5631_pinmux_set);
-
-    /* GPIOA_19 PULL_UP_REG0 bit19 */
-//    aml_set_reg32_bits(P_PAD_PULL_UP_REG0, 1, 19, 1);
-#endif
-}
-
-static void dummy_codec_device_deinit(void)
-{
-#ifdef CONFIG_USE_OF
-	pinctrl_put(p);
-#else
-//    pinmux_clr(&rt5631_pinmux_set);
-#endif
-}
-#endif
 static struct platform_device *dummy_codec_snd_device = NULL;
 
 static int dummy_codec_audio_probe(struct platform_device *pdev)
@@ -230,27 +176,6 @@ static int dummy_codec_audio_probe(struct platform_device *pdev)
 
     //printk(KERN_DEBUG "enter %s\n", __func__);
     printk("enter %s\n", __func__);
-#ifdef CONFIG_USE_OF		
-		dummy_codec_pdata = kzalloc(sizeof(struct dummy_codec_platform_data), GFP_KERNEL);
-		if(!dummy_codec_pdata){
-           // kfree(dummy_codec_pdata);
-			return -1;
-		}
-
-		if (pdev->dev.of_node) {
-            np = pdev->dev.of_node;
-            ret = of_property_match_string(np,"status","okay");
-            if(ret){
-                printk("the platform not register this codec\n");
-				goto err1;
-            }
-		}
-		dummy_codec_dev=&pdev->dev;		
-    dummy_codec_pdata->device_init = &dummy_codec_device_init;
-    dummy_codec_pdata->device_uninit = &dummy_codec_device_deinit;
-         
-		pdev->dev.platform_data = dummy_codec_pdata;
-#endif
 
     dummy_codec_snd_pdata = pdev->dev.platform_data;
     snd_BUG_ON(!dummy_codec_snd_pdata);
@@ -269,6 +194,8 @@ static int dummy_codec_audio_probe(struct platform_device *pdev)
         goto err_device_add;
     }
 
+   if (0 == aml_alsa_create_ctrl(snd_soc_dummy_codec.snd_card,&audio_mixer_control))
+        printk("dummy codec control ALSA component registered!\n");
 
     dummy_codec_dev_init();
 
@@ -277,8 +204,6 @@ static int dummy_codec_audio_probe(struct platform_device *pdev)
 err_device_add:
     platform_device_put(dummy_codec_snd_device);
 err:
-err1:
-    kfree(dummy_codec_pdata);
     return ret;
 }
 
@@ -289,7 +214,6 @@ static int dummy_codec_audio_remove(struct platform_device *pdev)
     dummy_codec_dev_uninit();
 
     platform_device_put(dummy_codec_snd_device);
-    kfree(dummy_codec_pdata);
 
     dummy_codec_snd_device = NULL;
     dummy_codec_snd_pdata = NULL;
@@ -297,22 +221,12 @@ static int dummy_codec_audio_remove(struct platform_device *pdev)
     return ret;
 }
 
-#ifdef CONFIG_USE_OF
-static const struct of_device_id aml_dummy_codec_dt_match[]={
-	{	.compatible = "amlogic,aml_dummy_codec_audio",
-	},
-	{},
-};
-#else
-#define aml_dummy_codec_dt_match NULL
-#endif
 static struct platform_driver aml_m_dummy_codec_driver = {
     .probe  = dummy_codec_audio_probe,
-    .remove = dummy_codec_audio_remove,
+    .remove = __devexit_p(dummy_codec_audio_remove),
     .driver = {
         .name = "aml_dummy_codec_audio",
         .owner = THIS_MODULE,
-        .of_match_table = aml_dummy_codec_dt_match,
     },
 };
 

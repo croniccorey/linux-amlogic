@@ -299,7 +299,7 @@ static long audiodsp_ioctl(struct file *file, unsigned int cmd,
 				DSP_WD(DSP_DTS_DEC_INFO,dts_dec_control|(1<<31));
 			break;
 		case AUDIODSP_START:						
-			if(IEC958_mode_codec || (IEC958_mode_codec_last != IEC958_mode_codec))
+			if(IEC958_mode_codec/* || (IEC958_mode_codec_last != IEC958_mode_codec)*/)
 			{
 				IEC958_mode_raw_last = IEC958_mode_raw;
 				IEC958_mode_codec_last = IEC958_mode_codec;
